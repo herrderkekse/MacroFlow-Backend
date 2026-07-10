@@ -1,0 +1,11 @@
+.git
+.gitignore
+.env
+*.md
+!SYNC.md
+data/
+*.db
+*.db-wal
+*.db-shm
+LICENSE
+docker-compose.yml

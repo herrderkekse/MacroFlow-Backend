@@ -1,0 +1,24 @@
+services:
+  macroflow-sync:
+    build: .
+    # Or use a pre-built image:
+    # image: ghcr.io/herrderkekse/macroflow-backend:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Provision your device credentials here (or via an .env file / secret).
+      USERS: "${USERS:?set USERS, e.g. alice:change-me}"
+    volumes:
+      - macroflow-data:/data
+    healthcheck:
+      # The binary is the only thing in the image (no shell/curl), so exec it
+      # with a flag that performs a localhost health probe and exits.
+      test: ["CMD", "/macroflow-sync", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  macroflow-data:
