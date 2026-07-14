@@ -27,6 +27,9 @@ type Config struct {
 	// AllowSignup enables the self-service POST /api/v1/auth/register endpoint.
 	// Disable it on shared deployments once accounts are provisioned.
 	AllowSignup bool
+	// MaxUserBytes caps the stored change-log size per user, in bytes. A push
+	// that would leave a user over this cap is rejected. 0 means unlimited.
+	MaxUserBytes int64
 }
 
 // Load reads configuration from the environment and validates it.
@@ -41,6 +44,7 @@ type Config struct {
 //	MAX_BODY_BYTES  max request body in bytes         (default 33554432 = 32 MiB)
 //	MAX_LIMIT       max pull page size                (default 1000)
 //	ALLOW_SIGNUP    enable self-service registration  (default true)
+//	MAX_USER_BYTES  per-user storage cap in bytes     (default 0 = unlimited)
 //
 // At least one of USERS / USERS_FILE must yield a user, otherwise no request
 // could ever authenticate.
@@ -80,6 +84,14 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("invalid MAX_LIMIT %q", v)
 		}
 		cfg.MaxLimit = n
+	}
+
+	if v := os.Getenv("MAX_USER_BYTES"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n < 0 {
+			return nil, fmt.Errorf("invalid MAX_USER_BYTES %q (want a non-negative integer; 0 = unlimited)", v)
+		}
+		cfg.MaxUserBytes = n
 	}
 
 	if raw := os.Getenv("USERS"); raw != "" {

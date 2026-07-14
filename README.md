@@ -34,8 +34,13 @@ registered account or a `USERS` entry):
 | Method & path | Purpose |
 |---|---|
 | `GET /ping` | Auth check ("Test Connection" in the app). `200` / `401`. |
+| `GET /usage` | Storage used by the user: `{bytes, rows, quota}` (`quota` 0 = unlimited). |
 | `GET /changes?after=<cursor>&limit=<n>` | Pull changes with `seq > after`, ascending. |
 | `POST /changes` | Append a batch of changes (`{deviceId, changes[]}`). |
+
+`POST /changes` returns `507 Insufficient Storage` (with `{error, bytes, quota}`)
+when the batch would leave the user over `MAX_USER_BYTES`; the batch is rejected
+atomically. Delete-only batches are always accepted so a user can free space.
 
 Plus an unauthenticated `GET /healthz` for orchestrator probes.
 
@@ -52,6 +57,7 @@ All via environment variables (see [.env.example](.env.example)):
 | `DB_PATH` | `./data/macroflow.db` (`/data/macroflow.db` in Docker) | SQLite file. |
 | `MAX_BODY_BYTES` | `33554432` (32 MiB) | Push body cap; keep above 20 MB for base64 photos. |
 | `MAX_LIMIT` | `1000` | Server cap on a pull's `limit`. |
+| `MAX_USER_BYTES` | `0` | Per-user stored-size cap in bytes (`0` = unlimited). Over-cap pushes get `507`. |
 
 The server refuses to start with no users configured.
 

@@ -39,6 +39,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/auth/login", s.limitBody(http.HandlerFunc(s.login)))
 
 	mux.Handle("GET /api/v1/sync/ping", s.auth(http.HandlerFunc(s.ping)))
+	mux.Handle("GET /api/v1/sync/usage", s.auth(http.HandlerFunc(s.usage)))
 	mux.Handle("GET /api/v1/sync/changes", s.auth(http.HandlerFunc(s.pull)))
 	mux.Handle("POST /api/v1/sync/changes", s.auth(http.HandlerFunc(s.push)))
 
@@ -154,7 +155,18 @@ func (s *Server) push(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	accepted, maxSeq, err := s.store.Push(r.Context(), user, req.DeviceID, req.Changes)
+	accepted, maxSeq, err := s.store.Push(r.Context(), user, req.DeviceID, req.Changes, s.cfg.MaxUserBytes)
+	if errors.Is(err, store.ErrQuotaExceeded) {
+		// Report the current committed usage so the client can show how far
+		// over the cap the account is. Nothing from this batch was stored.
+		bytes, _, _ := s.store.Usage(r.Context(), user)
+		writeJSON(w, http.StatusInsufficientStorage, map[string]any{
+			"error": "storage quota exceeded",
+			"bytes": bytes,
+			"quota": s.cfg.MaxUserBytes,
+		})
+		return
+	}
 	if err != nil {
 		s.log.Error("push failed", "user", user, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -164,6 +176,23 @@ func (s *Server) push(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"accepted": accepted,
 		"maxSeq":   maxSeq,
+	})
+}
+
+// usage reports the authenticated user's stored change-log size and the
+// configured per-user cap (0 = unlimited).
+func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
+	bytes, rows, err := s.store.Usage(r.Context(), user)
+	if err != nil {
+		s.log.Error("usage failed", "user", user, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"bytes": bytes,
+		"rows":  rows,
+		"quota": s.cfg.MaxUserBytes,
 	})
 }
 
