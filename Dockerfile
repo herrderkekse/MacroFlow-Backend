@@ -28,6 +28,10 @@ RUN mkdir -p /data && chown 65532:65532 /data
 # ── Runtime stage ──────────────────────────────────────────
 FROM gcr.io/distroless/static-debian12:nonroot
 
+# Link the published GHCR image back to its source repo. GitHub uses this label
+# to associate the package with the repository (and inherit its visibility).
+LABEL org.opencontainers.image.source=https://github.com/herrderkekse/MacroFlow-Backend
+
 # Persist the SQLite database here; mount a volume at /data.
 ENV DB_PATH=/data/macroflow.db \
     PORT=8080
