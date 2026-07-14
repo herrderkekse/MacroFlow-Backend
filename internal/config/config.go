@@ -24,6 +24,9 @@ type Config struct {
 	MaxBodyBytes int64
 	// MaxLimit caps the page size a client may request on pull.
 	MaxLimit int
+	// AllowSignup enables the self-service POST /api/v1/auth/register endpoint.
+	// Disable it on shared deployments once accounts are provisioned.
+	AllowSignup bool
 }
 
 // Load reads configuration from the environment and validates it.
@@ -37,6 +40,7 @@ type Config struct {
 //	USERS_FILE      path to a file of "user:pass" lines (for Docker secrets)
 //	MAX_BODY_BYTES  max request body in bytes         (default 33554432 = 32 MiB)
 //	MAX_LIMIT       max pull page size                (default 1000)
+//	ALLOW_SIGNUP    enable self-service registration  (default true)
 //
 // At least one of USERS / USERS_FILE must yield a user, otherwise no request
 // could ever authenticate.
@@ -47,6 +51,15 @@ func Load() (*Config, error) {
 		Users:        map[string]string{},
 		MaxBodyBytes: 32 << 20,
 		MaxLimit:     1000,
+		AllowSignup:  true,
+	}
+
+	if v := os.Getenv("ALLOW_SIGNUP"); v != "" {
+		enabled, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid ALLOW_SIGNUP %q (want true/false)", v)
+		}
+		cfg.AllowSignup = enabled
 	}
 
 	if addr := os.Getenv("ADDR"); addr != "" {

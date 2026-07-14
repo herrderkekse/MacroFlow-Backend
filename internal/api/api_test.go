@@ -17,6 +17,10 @@ import (
 )
 
 func newTestServer(t *testing.T) http.Handler {
+	return newTestServerWith(t, true)
+}
+
+func newTestServerWith(t *testing.T, allowSignup bool) http.Handler {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -27,6 +31,7 @@ func newTestServer(t *testing.T) http.Handler {
 		Users:        map[string]string{"alice": "secret", "bob": "hunter2"},
 		MaxBodyBytes: 32 << 20,
 		MaxLimit:     1000,
+		AllowSignup:  allowSignup,
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return api.New(cfg, st, log).Handler()

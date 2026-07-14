@@ -11,12 +11,25 @@ is specified in [SYNC.md](SYNC.md).
 
 - **Language:** Go (standard library + pure-Go SQLite, no cgo)
 - **Storage:** a single SQLite file
-- **Auth:** HTTP Basic, users provisioned out-of-band (no signup)
+- **Auth:** HTTP Basic. Users are either provisioned out-of-band (`USERS`) or
+  self-registered via the auth endpoints (stored bcrypt-hashed).
 - **Deploy:** one static binary in a distroless container
 
 ## Endpoints
 
-All under `/api/v1/sync`, all requiring HTTP Basic auth:
+**Accounts** — unauthenticated (the caller has no account yet), JSON body
+`{username, password}`:
+
+| Method & path | Purpose |
+|---|---|
+| `POST /api/v1/auth/register` | Create an account. `201` / `409` (taken) / `400` (invalid) / `403` (signup disabled). |
+| `POST /api/v1/auth/login` | Verify credentials ("Sign In" in the app). `200 {username}` / `401`. |
+
+Usernames are case-insensitive (stored lower-cased), 3–64 chars of letters,
+digits, `.`, `_`, `-`; passwords are 8–72 bytes.
+
+**Sync** — all under `/api/v1/sync`, all requiring HTTP Basic auth (a
+registered account or a `USERS` entry):
 
 | Method & path | Purpose |
 |---|---|
@@ -34,6 +47,7 @@ All via environment variables (see [.env.example](.env.example)):
 |---|---|---|
 | `USERS` | — | **Required.** `user:pass` pairs, comma-separated. |
 | `USERS_FILE` | — | Optional file of `user:pass` lines (Docker secrets). Merged with `USERS`. |
+| `ALLOW_SIGNUP` | `true` | When `false`, `POST /auth/register` returns `403`. Existing accounts and login are unaffected. |
 | `PORT` | `8080` | Listen port. |
 | `DB_PATH` | `./data/macroflow.db` (`/data/macroflow.db` in Docker) | SQLite file. |
 | `MAX_BODY_BYTES` | `33554432` (32 MiB) | Push body cap; keep above 20 MB for base64 photos. |
@@ -41,9 +55,12 @@ All via environment variables (see [.env.example](.env.example)):
 
 The server refuses to start with no users configured.
 
-> **Security:** passwords are compared in constant time, but stored as given
-> (plaintext in env/file). Terminate TLS in front of this service (reverse
-> proxy) — Basic auth over plain HTTP exposes credentials.
+> **Security:** self-registered account passwords are stored bcrypt-hashed.
+> `USERS`/`USERS_FILE` passwords are compared in constant time but stored as
+> given (plaintext in env/file). Either way, Basic auth over plain HTTP exposes
+> credentials on the wire — terminate TLS in front of this service (reverse
+> proxy). Set `ALLOW_SIGNUP=false` on servers that should not accept new
+> accounts.
 
 ## Run with Docker
 
