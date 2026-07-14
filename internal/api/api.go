@@ -33,11 +33,24 @@ func (s *Server) Handler() http.Handler {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	// Account endpoints are unauthenticated (the caller has no account yet) but
+	// still body-size capped.
+	mux.Handle("POST /api/v1/auth/register", s.limitBody(http.HandlerFunc(s.register)))
+	mux.Handle("POST /api/v1/auth/login", s.limitBody(http.HandlerFunc(s.login)))
+
 	mux.Handle("GET /api/v1/sync/ping", s.auth(http.HandlerFunc(s.ping)))
 	mux.Handle("GET /api/v1/sync/changes", s.auth(http.HandlerFunc(s.pull)))
 	mux.Handle("POST /api/v1/sync/changes", s.auth(http.HandlerFunc(s.push)))
 
 	return mux
+}
+
+// limitBody caps the request body at cfg.MaxBodyBytes without requiring auth.
+func (s *Server) limitBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxBodyBytes)
+		next.ServeHTTP(w, r)
+	})
 }
 
 // userKey is the context key under which the authenticated username is stored.
@@ -50,12 +63,16 @@ func (s *Server) auth(next http.Handler) http.Handler {
 		r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxBodyBytes)
 
 		username, password, ok := r.BasicAuth()
-		if !ok || !s.cfg.Authenticate(username, password) {
+		// authenticate resolves the canonical user id (a DB account is stored
+		// lower-cased) so the same credentials key the same change log whatever
+		// casing the client sent.
+		user, authed := s.authenticate(r.Context(), username, password)
+		if !ok || !authed {
 			w.Header().Set("WWW-Authenticate", `Basic realm="MacroFlow Sync", charset="UTF-8"`)
 			writeError(w, http.StatusUnauthorized, "invalid credentials")
 			return
 		}
-		ctx := contextWithUser(r.Context(), username)
+		ctx := contextWithUser(r.Context(), user)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
