@@ -146,7 +146,11 @@ func (s *Store) Pull(ctx context.Context, userID string, after int64, limit int)
 // the same (table, row). The whole batch commits atomically — a malformed or
 // failed batch stores nothing. It returns the count accepted and the highest
 // seq assigned.
-func (s *Store) Push(ctx context.Context, userID, deviceID string, changes []Incoming) (accepted int, maxSeq int64, err error) {
+//
+// When maxUserBytes > 0, the user's total stored size is measured after the
+// batch is applied (so compaction and deletes are accounted for exactly); if it
+// exceeds the cap the transaction is rolled back and ErrQuotaExceeded returned.
+func (s *Store) Push(ctx context.Context, userID, deviceID string, changes []Incoming, maxUserBytes int64) (accepted int, maxSeq int64, err error) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
@@ -185,6 +189,19 @@ func (s *Store) Push(ctx context.Context, userID, deviceID string, changes []Inc
 		}
 		maxSeq = next
 		next++
+	}
+
+	// Enforce the per-user storage cap on the post-compaction footprint, so a
+	// batch that only replaces or deletes rows can stay within (or free up)
+	// quota rather than being rejected for its transient size.
+	if maxUserBytes > 0 {
+		bytes, _, err := queryUsage(ctx, tx, userID)
+		if err != nil {
+			return 0, 0, err
+		}
+		if bytes > maxUserBytes {
+			return 0, 0, ErrQuotaExceeded
+		}
 	}
 
 	if _, err := tx.ExecContext(ctx, `
