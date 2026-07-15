@@ -30,6 +30,11 @@ type Config struct {
 	// MaxUserBytes caps the stored change-log size per user, in bytes. A push
 	// that would leave a user over this cap is rejected. 0 means unlimited.
 	MaxUserBytes int64
+	// AdminAddr is the TCP address of the unauthenticated admin listener
+	// (dashboard + management API). Empty disables it. It must never be
+	// reachable from outside the host: bind it to loopback, or in Docker
+	// publish the container port only on the host's loopback interface.
+	AdminAddr string
 }
 
 // Load reads configuration from the environment and validates it.
@@ -45,6 +50,7 @@ type Config struct {
 //	MAX_LIMIT       max pull page size                (default 1000)
 //	ALLOW_SIGNUP    enable self-service registration  (default true)
 //	MAX_USER_BYTES  per-user storage cap in bytes     (default 0 = unlimited)
+//	ADMIN_ADDR      admin listener address            (default "" = disabled)
 //
 // At least one of USERS / USERS_FILE must yield a user, otherwise no request
 // could ever authenticate.
@@ -69,6 +75,8 @@ func Load() (*Config, error) {
 	if addr := os.Getenv("ADDR"); addr != "" {
 		cfg.Addr = addr
 	}
+
+	cfg.AdminAddr = os.Getenv("ADMIN_ADDR")
 
 	if v := os.Getenv("MAX_BODY_BYTES"); v != "" {
 		n, err := strconv.ParseInt(v, 10, 64)
