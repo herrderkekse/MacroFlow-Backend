@@ -1,5 +1,17 @@
 # syntax=docker/dockerfile:1
 
+# ── Admin dashboard build stage ────────────────────────────
+FROM node:22-alpine AS ui
+
+WORKDIR /ui
+
+COPY admin-ui/package.json admin-ui/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
+
+COPY admin-ui/ .
+RUN npm run build
+
 # ── Build stage ────────────────────────────────────────────
 FROM golang:1.25-alpine AS build
 
@@ -11,6 +23,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
 COPY . .
+# The built dashboard is embedded into the binary via go:embed.
+COPY --from=ui /ui/dist admin-ui/dist
 
 # Pure-Go build (modernc.org/sqlite needs no cgo), so we can produce a fully
 # static binary and ship it on a minimal base. Trim symbols to shrink it.

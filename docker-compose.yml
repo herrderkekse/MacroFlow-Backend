@@ -6,9 +6,16 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+      # Admin dashboard: published on the host's loopback interface only, so
+      # it is reachable solely from the server itself (or an SSH tunnel:
+      # `ssh -L 8081:localhost:8081 <server>`, then open http://localhost:8081).
+      - "127.0.0.1:8081:8081"
     environment:
       # Provision your device credentials here (or via an .env file / secret).
       USERS: "${USERS:?set USERS, e.g. alice:change-me}"
+      # The admin listener is unauthenticated by design; the loopback-only
+      # port mapping above is its access control. Unset to disable entirely.
+      ADMIN_ADDR: ":8081"
     volumes:
       - macroflow-data:/data
     healthcheck:

@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync/atomic"
+	"time"
 
 	"github.com/herrderkekse/MacroFlow-Backend/internal/config"
 	"github.com/herrderkekse/MacroFlow-Backend/internal/store"
@@ -15,14 +17,24 @@ import (
 
 // Server wires the store and config into an http.Handler.
 type Server struct {
-	cfg   *config.Config
-	store *store.Store
-	log   *slog.Logger
+	cfg     *config.Config
+	store   *store.Store
+	log     *slog.Logger
+	started time.Time
+	metrics metrics
+}
+
+// metrics holds in-process counters over the public API, reported by the
+// admin overview endpoint. They reset on restart.
+type metrics struct {
+	total  atomic.Int64
+	err4xx atomic.Int64
+	err5xx atomic.Int64
 }
 
 // New returns a Server.
 func New(cfg *config.Config, st *store.Store, log *slog.Logger) *Server {
-	return &Server{cfg: cfg, store: st, log: log}
+	return &Server{cfg: cfg, store: st, log: log, started: time.Now()}
 }
 
 // Handler builds the routed, middleware-wrapped http.Handler.
@@ -43,7 +55,40 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/sync/changes", s.auth(http.HandlerFunc(s.pull)))
 	mux.Handle("POST /api/v1/sync/changes", s.auth(http.HandlerFunc(s.push)))
 
-	return mux
+	return s.countRequests(mux)
+}
+
+// countRequests feeds the admin metrics. /healthz is skipped so periodic
+// container probes don't drown out real traffic in the totals.
+func (s *Server) countRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+
+		s.metrics.total.Add(1)
+		switch {
+		case rec.status >= 500:
+			s.metrics.err5xx.Add(1)
+		case rec.status >= 400:
+			s.metrics.err4xx.Add(1)
+		}
+	})
+}
+
+// statusRecorder captures the response status code for countRequests. A
+// handler that never calls WriteHeader implicitly sends 200.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
 }
 
 // limitBody caps the request body at cfg.MaxBodyBytes without requiring auth.
@@ -203,6 +248,23 @@ func parseInt(raw string, def int64) (int64, error) {
 		return def, nil
 	}
 	return strconv.ParseInt(raw, 10, 64)
+}
+
+// decodeJSON reads and strictly JSON-decodes the request body into dst,
+// writing an error response and returning false on failure.
+func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return false
+		}
+		writeError(w, http.StatusBadRequest, "malformed request body")
+		return false
+	}
+	return true
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

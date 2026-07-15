@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	adminui "github.com/herrderkekse/MacroFlow-Backend/admin-ui"
 	"github.com/herrderkekse/MacroFlow-Backend/internal/api"
 	"github.com/herrderkekse/MacroFlow-Backend/internal/config"
 	"github.com/herrderkekse/MacroFlow-Backend/internal/store"
@@ -51,9 +52,11 @@ func main() {
 	}
 	defer st.Close()
 
+	apiSrv := api.New(cfg, st, log)
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           api.New(cfg, st, log).Handler(),
+		Handler:           apiSrv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		// No WriteTimeout: large push payloads (base64 photos) can take a while
 		// to read; MaxBytesReader bounds memory instead.
@@ -72,6 +75,25 @@ func main() {
 		}
 	}()
 
+	// The admin dashboard/API is unauthenticated and must stay host-only, so
+	// it gets its own listener that is never exposed by the public Addr.
+	var adminSrv *http.Server
+	if cfg.AdminAddr != "" {
+		adminSrv = &http.Server{
+			Addr:              cfg.AdminAddr,
+			Handler:           apiSrv.AdminHandler(adminui.Dist()),
+			ReadHeaderTimeout: 10 * time.Second,
+			IdleTimeout:       60 * time.Second,
+		}
+		go func() {
+			log.Info("admin listening", "addr", cfg.AdminAddr)
+			if err := adminSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error("admin server error", "err", err)
+				stop()
+			}
+		}()
+	}
+
 	<-ctx.Done()
 	log.Info("shutting down")
 
@@ -79,6 +101,11 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Error("graceful shutdown failed", "err", err)
+	}
+	if adminSrv != nil {
+		if err := adminSrv.Shutdown(shutdownCtx); err != nil {
+			log.Error("admin graceful shutdown failed", "err", err)
+		}
 	}
 }
 

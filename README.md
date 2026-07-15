@@ -58,6 +58,7 @@ All via environment variables (see [.env.example](.env.example)):
 | `MAX_BODY_BYTES` | `33554432` (32 MiB) | Push body cap; keep above 20 MB for base64 photos. |
 | `MAX_LIMIT` | `1000` | Server cap on a pull's `limit`. |
 | `MAX_USER_BYTES` | `0` | Per-user stored-size cap in bytes (`0` = unlimited). Over-cap pushes get `507`. |
+| `ADMIN_ADDR` | — (disabled) | Admin dashboard/API listener, e.g. `127.0.0.1:8081` (`:8081` in Docker). **Keep it host-only** — see below. |
 
 The server refuses to start with no users configured.
 
@@ -67,6 +68,44 @@ The server refuses to start with no users configured.
 > credentials on the wire — terminate TLS in front of this service (reverse
 > proxy). Set `ALLOW_SIGNUP=false` on servers that should not accept new
 > accounts.
+
+## Admin dashboard
+
+Setting `ADMIN_ADDR` starts a second listener serving a web dashboard (server
+health, per-user storage/devices/quota, request counters) and a management API
+(reset account passwords, wipe a user's data, delete accounts).
+
+It is **unauthenticated by design**: access control is network reachability.
+Bind it to loopback — never the public interface. The bundled
+`docker-compose.yml` publishes it as `127.0.0.1:8081:8081`, so it is reachable
+only from the server itself; from your machine, tunnel in and open
+<http://localhost:8081>:
+
+```bash
+ssh -L 8081:localhost:8081 your-server
+```
+
+The management API is plain JSON if you prefer curl over the UI:
+
+| Method & path | Purpose |
+|---|---|
+| `GET /api/admin/overview` | Uptime, storage totals, request counters, config. |
+| `GET /api/admin/users` | All users (static/account/orphaned) with per-user stats. |
+| `POST /api/admin/users/{name}/password` | Reset an account's password (`{"password": "..."}`). |
+| `DELETE /api/admin/users/{name}/data` | Wipe a user's stored change log (account kept; devices re-upload). |
+| `DELETE /api/admin/users/{name}` | Delete an account and all its data. |
+
+Static `USERS` entries are configuration, not accounts: password reset and
+delete return `409` for them (edit the environment instead); wiping their data
+works.
+
+The dashboard is a small Vite + React app in [admin-ui/](admin-ui/), compiled
+into the binary via `go:embed`. The Docker build does this automatically; for
+a local binary with the UI, run `npm ci && npm run build` in `admin-ui/`
+first (without it, the JSON API still works and `/` explains itself). UI
+development: `ADMIN_ADDR=127.0.0.1:8081 USERS=alice:secret go run .` in one
+terminal, `npm run dev` in `admin-ui/` in another (the dev server proxies
+`/api` to the Go listener).
 
 ## Run with Docker
 
@@ -129,7 +168,8 @@ all-or-nothing batch validation.
 main.go                 process wiring, graceful shutdown, -healthcheck
 internal/config         env parsing, constant-time auth
 internal/store          SQLite change log (pull, push, compaction)
-internal/api            HTTP routing, Basic-auth middleware, handlers
-Dockerfile              static build → distroless/static (nonroot)
+internal/api            HTTP routing, Basic-auth middleware, handlers, admin API
+admin-ui                admin dashboard (Vite + React), embedded via go:embed
+Dockerfile              UI build → static Go build → distroless/static (nonroot)
 docker-compose.yml      one-command deploy with a persistent volume
 ```

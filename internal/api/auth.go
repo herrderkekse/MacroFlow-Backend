@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -132,18 +131,7 @@ const dummyHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
 // response and returning ok=false on failure.
 func decodeCredentials(w http.ResponseWriter, r *http.Request) (credentials, bool) {
 	var creds credentials
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&creds); err != nil {
-		var maxErr *http.MaxBytesError
-		if errors.As(err, &maxErr) {
-			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
-			return credentials{}, false
-		}
-		writeError(w, http.StatusBadRequest, "malformed request body")
-		return credentials{}, false
-	}
-	return creds, true
+	return creds, decodeJSON(w, r, &creds)
 }
 
 // normaliseUsername trims, lower-cases, and validates a username. Allowed

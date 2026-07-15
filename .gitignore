@@ -30,3 +30,12 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Admin dashboard build output (embedded via go:embed at build time) and deps
+admin-ui/dist/*
+!admin-ui/dist/.gitkeep
+admin-ui/node_modules/
+admin-ui/*.tsbuildinfo
+
+# Local agent tooling
+.claude/

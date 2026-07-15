@@ -9,3 +9,5 @@ data/
 *.db-shm
 LICENSE
 docker-compose.yml
+admin-ui/node_modules/
+admin-ui/dist/
