@@ -35,6 +35,9 @@ type Config struct {
 	// reachable from outside the host: bind it to loopback, or in Docker
 	// publish the container port only on the host's loopback interface.
 	AdminAddr string
+	// CORSOrigins lists the origins allowed to call the browser-facing
+	// endpoints (currently the contact form) cross-origin. "*" allows any.
+	CORSOrigins []string
 }
 
 // Load reads configuration from the environment and validates it.
@@ -51,6 +54,7 @@ type Config struct {
 //	ALLOW_SIGNUP    enable self-service registration  (default true)
 //	MAX_USER_BYTES  per-user storage cap in bytes     (default 0 = unlimited)
 //	ADMIN_ADDR      admin listener address            (default "" = disabled)
+//	CORS_ORIGINS    allowed browser origins, comma-separated (default "*")
 //
 // At least one of USERS / USERS_FILE must yield a user, otherwise no request
 // could ever authenticate.
@@ -77,6 +81,16 @@ func Load() (*Config, error) {
 	}
 
 	cfg.AdminAddr = os.Getenv("ADMIN_ADDR")
+
+	cfg.CORSOrigins = []string{"*"}
+	if raw := os.Getenv("CORS_ORIGINS"); raw != "" {
+		cfg.CORSOrigins = nil
+		for _, origin := range strings.Split(raw, ",") {
+			if origin = strings.TrimSpace(strings.TrimSuffix(origin, "/")); origin != "" {
+				cfg.CORSOrigins = append(cfg.CORSOrigins, origin)
+			}
+		}
+	}
 
 	if v := os.Getenv("MAX_BODY_BYTES"); v != "" {
 		n, err := strconv.ParseInt(v, 10, 64)

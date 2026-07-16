@@ -42,6 +42,21 @@ registered account or a `USERS` entry):
 when the batch would leave the user over `MAX_USER_BYTES`; the batch is rejected
 atomically. Delete-only batches are always accepted so a user can free space.
 
+**Contact** — unauthenticated, used by the website's contact form:
+
+| Method & path | Purpose |
+|---|---|
+| `POST /api/v1/contact` | Store a contact-form submission (`{type, name, email, subject, message}`). `201` / `400` (invalid) / `429` (rate-limited). |
+
+`type` identifies the submitting form so the admin can tell them apart; known
+values are `contact` and `support` (extend `contactTypes` in
+`internal/api/contact.go` when a new form is added). Submissions are
+rate-limited per client IP (5 per 15 minutes) and validated (name ≤ 100 chars,
+valid email ≤ 254 chars, subject ≤ 200 chars, message ≤ 5000 chars). The endpoint
+sends CORS headers so the website can call it cross-origin; allowed origins are
+configured via `CORS_ORIGINS`. Stored messages are read and deleted through the
+admin API.
+
 Plus an unauthenticated `GET /healthz` for orchestrator probes.
 
 ## Configuration
@@ -59,6 +74,7 @@ All via environment variables (see [.env.example](.env.example)):
 | `MAX_LIMIT` | `1000` | Server cap on a pull's `limit`. |
 | `MAX_USER_BYTES` | `0` | Per-user stored-size cap in bytes (`0` = unlimited). Over-cap pushes get `507`. |
 | `ADMIN_ADDR` | — (disabled) | Admin dashboard/API listener, e.g. `127.0.0.1:8081` (`:8081` in Docker). **Keep it host-only** — see below. |
+| `CORS_ORIGINS` | `*` | Origins allowed to call the contact endpoint from a browser, comma-separated. Set to the website origin in production, e.g. `https://macro-flow.org`. |
 
 The server refuses to start with no users configured.
 
@@ -94,6 +110,8 @@ The management API is plain JSON if you prefer curl over the UI:
 | `POST /api/admin/users/{name}/password` | Reset an account's password (`{"password": "..."}`). |
 | `DELETE /api/admin/users/{name}/data` | Wipe a user's stored change log (account kept; devices re-upload). |
 | `DELETE /api/admin/users/{name}` | Delete an account and all its data. |
+| `GET /api/admin/contact` | List contact-form submissions, newest first. |
+| `DELETE /api/admin/contact/{id}` | Delete one contact-form submission. |
 
 Static `USERS` entries are configuration, not accounts: password reset and
 delete return `409` for them (edit the environment instead); wiping their data

@@ -17,11 +17,12 @@ import (
 
 // Server wires the store and config into an http.Handler.
 type Server struct {
-	cfg     *config.Config
-	store   *store.Store
-	log     *slog.Logger
-	started time.Time
-	metrics metrics
+	cfg            *config.Config
+	store          *store.Store
+	log            *slog.Logger
+	started        time.Time
+	metrics        metrics
+	contactLimiter *ipLimiter
 }
 
 // metrics holds in-process counters over the public API, reported by the
@@ -34,7 +35,10 @@ type metrics struct {
 
 // New returns a Server.
 func New(cfg *config.Config, st *store.Store, log *slog.Logger) *Server {
-	return &Server{cfg: cfg, store: st, log: log, started: time.Now()}
+	return &Server{
+		cfg: cfg, store: st, log: log, started: time.Now(),
+		contactLimiter: newIPLimiter(contactRateLimit, contactRateWindow),
+	}
 }
 
 // Handler builds the routed, middleware-wrapped http.Handler.
@@ -49,6 +53,11 @@ func (s *Server) Handler() http.Handler {
 	// still body-size capped.
 	mux.Handle("POST /api/v1/auth/register", s.limitBody(http.HandlerFunc(s.register)))
 	mux.Handle("POST /api/v1/auth/login", s.limitBody(http.HandlerFunc(s.login)))
+
+	// The contact form is submitted cross-origin from the website, so the
+	// endpoint answers its own CORS preflight.
+	mux.Handle("POST /api/v1/contact", s.cors(s.limitBody(http.HandlerFunc(s.contact))))
+	mux.Handle("OPTIONS /api/v1/contact", s.cors(http.NotFoundHandler()))
 
 	mux.Handle("GET /api/v1/sync/ping", s.auth(http.HandlerFunc(s.ping)))
 	mux.Handle("GET /api/v1/sync/usage", s.auth(http.HandlerFunc(s.usage)))
