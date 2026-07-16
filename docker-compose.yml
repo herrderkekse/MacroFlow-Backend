@@ -16,6 +16,9 @@ services:
       # The admin listener is unauthenticated by design; the loopback-only
       # port mapping above is its access control. Unset to disable entirely.
       ADMIN_ADDR: ":8081"
+      # Browser origins allowed to call the contact-form endpoint (CORS).
+      # Defaults to "*"; pin it to the website origin in production.
+      CORS_ORIGINS: "${CORS_ORIGINS:-https://macro-flow.org}"
     volumes:
       - macroflow-data:/data
     healthcheck:

@@ -32,6 +32,7 @@ func newTestServerWith(t *testing.T, allowSignup bool) http.Handler {
 		MaxBodyBytes: 32 << 20,
 		MaxLimit:     1000,
 		AllowSignup:  allowSignup,
+		CORSOrigins:  []string{"https://macro-flow.org"},
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return api.New(cfg, st, log).Handler()

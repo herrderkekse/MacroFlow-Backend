@@ -11,6 +11,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,8 @@ func (s *Server) AdminHandler(ui fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/admin/users/{username}/password", s.adminSetPassword)
 	mux.HandleFunc("DELETE /api/admin/users/{username}/data", s.adminWipeData)
 	mux.HandleFunc("DELETE /api/admin/users/{username}", s.adminDeleteAccount)
+	mux.HandleFunc("GET /api/admin/contact", s.adminContactMessages)
+	mux.HandleFunc("DELETE /api/admin/contact/{id}", s.adminDeleteContactMessage)
 
 	// The dashboard is only present when the binary was built after `npm run
 	// build` in admin-ui/ (the Dockerfile always does). Point at the API
@@ -217,6 +220,38 @@ func (s *Server) adminDeleteAccount(w http.ResponseWriter, r *http.Request) {
 		s.log.Info("admin: deleted account", "user", username)
 		writeJSON(w, http.StatusOK, map[string]any{"username": username})
 	}
+}
+
+// adminContactMessages lists the stored contact-form submissions, newest
+// first.
+func (s *Server) adminContactMessages(w http.ResponseWriter, r *http.Request) {
+	msgs, err := s.store.ListContactMessages(r.Context())
+	if err != nil {
+		s.log.Error("admin: listing contact messages failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"messages": msgs})
+}
+
+// adminDeleteContactMessage removes one contact-form submission.
+func (s *Server) adminDeleteContactMessage(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid message id")
+		return
+	}
+	deleted, err := s.store.DeleteContactMessage(r.Context(), id)
+	if err != nil {
+		s.log.Error("admin: deleting contact message failed", "id", id, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if !deleted {
+		writeError(w, http.StatusNotFound, "no such message")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id})
 }
 
 // adminAccountName extracts and normalises the {username} path segment for
