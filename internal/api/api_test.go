@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/herrderkekse/MacroFlow-Backend/internal/api"
 	"github.com/herrderkekse/MacroFlow-Backend/internal/config"
@@ -28,11 +29,13 @@ func newTestServerWith(t *testing.T, allowSignup bool) http.Handler {
 	}
 	t.Cleanup(func() { st.Close() })
 	cfg := &config.Config{
-		Users:        map[string]string{"alice": "secret", "bob": "hunter2"},
-		MaxBodyBytes: 32 << 20,
-		MaxLimit:     1000,
-		AllowSignup:  allowSignup,
-		CORSOrigins:  []string{"https://macro-flow.org"},
+		Users:         map[string]string{"alice": "secret", "bob": "hunter2"},
+		MaxBodyBytes:  32 << 20,
+		MaxLimit:      1000,
+		AllowSignup:   allowSignup,
+		CORSOrigins:   []string{"https://macro-flow.org"},
+		MaxShareBytes: 64 << 10,
+		ShareTTL:      30 * 24 * time.Hour,
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return api.New(cfg, st, log).Handler()

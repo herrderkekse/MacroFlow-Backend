@@ -17,12 +17,14 @@ import (
 
 // Server wires the store and config into an http.Handler.
 type Server struct {
-	cfg            *config.Config
-	store          *store.Store
-	log            *slog.Logger
-	started        time.Time
-	metrics        metrics
-	contactLimiter *ipLimiter
+	cfg                *config.Config
+	store              *store.Store
+	log                *slog.Logger
+	started            time.Time
+	metrics            metrics
+	contactLimiter     *ipLimiter
+	shareCreateLimiter *ipLimiter
+	shareReadLimiter   *ipLimiter
 }
 
 // metrics holds in-process counters over the public API, reported by the
@@ -37,7 +39,9 @@ type metrics struct {
 func New(cfg *config.Config, st *store.Store, log *slog.Logger) *Server {
 	return &Server{
 		cfg: cfg, store: st, log: log, started: time.Now(),
-		contactLimiter: newIPLimiter(contactRateLimit, contactRateWindow),
+		contactLimiter:     newIPLimiter(contactRateLimit, contactRateWindow),
+		shareCreateLimiter: newIPLimiter(shareCreateRateLimit, shareCreateRateWindow),
+		shareReadLimiter:   newIPLimiter(shareReadRateLimit, shareReadRateWindow),
 	}
 }
 
@@ -63,6 +67,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/sync/usage", s.auth(http.HandlerFunc(s.usage)))
 	mux.Handle("GET /api/v1/sync/changes", s.auth(http.HandlerFunc(s.pull)))
 	mux.Handle("POST /api/v1/sync/changes", s.auth(http.HandlerFunc(s.push)))
+
+	// Creating a share reuses the sync account's Basic auth; fetching one back
+	// (as JSON, or as the redirect a scanned/tapped link hits) never requires
+	// an account, since the recipient may not have one.
+	mux.Handle("POST /api/v1/share", s.auth(http.HandlerFunc(s.createShare)))
+	mux.Handle("GET /api/v1/share/{token}", http.HandlerFunc(s.getShareJSON))
+	mux.Handle("GET /s/{token}", http.HandlerFunc(s.getShareRedirect))
 
 	return s.countRequests(mux)
 }

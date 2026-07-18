@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config is the fully-resolved server configuration.
@@ -38,6 +39,18 @@ type Config struct {
 	// CORSOrigins lists the origins allowed to call the browser-facing
 	// endpoints (currently the contact form) cross-origin. "*" allows any.
 	CORSOrigins []string
+	// MaxShareBytes caps a share payload's JSON size, in bytes. Shares are
+	// small food/recipe/log JSON blobs, not sync's photo-carrying rows, so
+	// this is much smaller than MaxBodyBytes.
+	MaxShareBytes int64
+	// ShareTTL is how long a share stays retrievable after creation.
+	ShareTTL time.Duration
+	// PublicOrigin is the externally-reachable "scheme://host" used to build
+	// share URLs. Empty means derive it from each request's Host (and TLS
+	// state) instead — set this explicitly when running behind a
+	// TLS-terminating reverse proxy, where the request the server sees is
+	// plain HTTP.
+	PublicOrigin string
 }
 
 // Load reads configuration from the environment and validates it.
@@ -55,17 +68,23 @@ type Config struct {
 //	MAX_USER_BYTES  per-user storage cap in bytes     (default 0 = unlimited)
 //	ADMIN_ADDR      admin listener address            (default "" = disabled)
 //	CORS_ORIGINS    allowed browser origins, comma-separated (default "*")
+//	SHARE_MAX_BYTES max share payload size in bytes   (default 65536 = 64 KiB)
+//	SHARE_TTL_DAYS  days a share stays retrievable     (default 30)
+//	PUBLIC_ORIGIN   externally-reachable scheme://host for share URLs (default "" = derive from request)
 //
 // At least one of USERS / USERS_FILE must yield a user, otherwise no request
 // could ever authenticate.
 func Load() (*Config, error) {
 	cfg := &Config{
-		Addr:         ":" + getenv("PORT", "8080"),
-		DBPath:       getenv("DB_PATH", "./data/macroflow.db"),
-		Users:        map[string]string{},
-		MaxBodyBytes: 32 << 20,
-		MaxLimit:     1000,
-		AllowSignup:  true,
+		Addr:          ":" + getenv("PORT", "8080"),
+		DBPath:        getenv("DB_PATH", "./data/macroflow.db"),
+		Users:         map[string]string{},
+		MaxBodyBytes:  32 << 20,
+		MaxLimit:      1000,
+		AllowSignup:   true,
+		MaxShareBytes: 64 << 10,
+		ShareTTL:      30 * 24 * time.Hour,
+		PublicOrigin:  strings.TrimSuffix(os.Getenv("PUBLIC_ORIGIN"), "/"),
 	}
 
 	if v := os.Getenv("ALLOW_SIGNUP"); v != "" {
@@ -114,6 +133,22 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("invalid MAX_USER_BYTES %q (want a non-negative integer; 0 = unlimited)", v)
 		}
 		cfg.MaxUserBytes = n
+	}
+
+	if v := os.Getenv("SHARE_MAX_BYTES"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("invalid SHARE_MAX_BYTES %q", v)
+		}
+		cfg.MaxShareBytes = n
+	}
+
+	if v := os.Getenv("SHARE_TTL_DAYS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("invalid SHARE_TTL_DAYS %q", v)
+		}
+		cfg.ShareTTL = time.Duration(n) * 24 * time.Hour
 	}
 
 	if raw := os.Getenv("USERS"); raw != "" {
