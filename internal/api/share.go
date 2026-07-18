@@ -7,6 +7,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/herrderkekse/MacroFlow-Backend/internal/store"
@@ -117,7 +118,10 @@ func (s *Server) getShareJSON(w http.ResponseWriter, r *http.Request) {
 // it just bounces a browser into the app via the custom URL scheme. Kept
 // deliberately dumb — no rendered preview — so a plain http(s) redirect is
 // all a browser has to handle, which is what keeps the QR scannable by stock
-// camera apps that only auto-recognize http(s) URLs.
+// camera apps that only auto-recognize http(s) URLs. The origin travels along
+// as a query parameter because the custom-scheme link otherwise loses which
+// server the token lives on — the recipient's app may not have (or may point
+// elsewhere with) a sync account.
 func (s *Server) getShareRedirect(w http.ResponseWriter, r *http.Request) {
 	if !s.shareReadLimiter.allow(clientIP(r), time.Now()) {
 		writeError(w, http.StatusTooManyRequests, "too many requests, please try again later")
@@ -134,20 +138,24 @@ func (s *Server) getShareRedirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "macroflow://share/"+token, http.StatusFound)
+	http.Redirect(w, r, "macroflow://share/"+token+"?origin="+url.QueryEscape(s.origin(r)), http.StatusFound)
 }
 
-// shareURL builds the human-facing share link for token, preferring the
-// configured PublicOrigin and otherwise deriving scheme://host from the
+// origin is the externally-reachable scheme://host shares live under,
+// preferring the configured PublicOrigin and otherwise deriving it from the
 // request itself.
-func (s *Server) shareURL(r *http.Request, token string) string {
-	origin := s.cfg.PublicOrigin
-	if origin == "" {
-		scheme := "http"
-		if r.TLS != nil {
-			scheme = "https"
-		}
-		origin = scheme + "://" + r.Host
+func (s *Server) origin(r *http.Request) string {
+	if s.cfg.PublicOrigin != "" {
+		return s.cfg.PublicOrigin
 	}
-	return origin + "/s/" + token
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
+// shareURL builds the human-facing share link for token.
+func (s *Server) shareURL(r *http.Request, token string) string {
+	return s.origin(r) + "/s/" + token
 }

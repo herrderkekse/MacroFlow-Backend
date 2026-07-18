@@ -3,6 +3,7 @@ package api_test
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -109,8 +110,11 @@ func TestShareRedirect(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("redirect: want 302, got %d (%s)", rec.Code, rec.Body.String())
 	}
-	if got := rec.Header().Get("Location"); got != "macroflow://share/"+created.Token {
-		t.Fatalf("redirect location: got %q", got)
+	// The origin rides along so the receiving app knows which server to fetch
+	// the payload from (httptest requests carry Host "example.com").
+	want := "macroflow://share/" + created.Token + "?origin=" + url.QueryEscape("http://example.com")
+	if got := rec.Header().Get("Location"); got != want {
+		t.Fatalf("redirect location: want %q, got %q", want, got)
 	}
 }
 

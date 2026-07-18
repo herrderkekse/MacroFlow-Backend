@@ -64,7 +64,7 @@ the resulting link, no account required to view/import it:
 |---|---|
 | `POST /api/v1/share` | Create a share (HTTP Basic auth required). Body `{kind: "food"\|"recipe"\|"log", version, payload}`. Returns `201 {token, url}` / `400` (invalid kind/version) / `413` (payload over `SHARE_MAX_BYTES`) / `429` (rate-limited). |
 | `GET /api/v1/share/{token}` | Fetch a share's payload as JSON (unauthenticated). `200 {kind, version, payload, createdAt}` / `404` (missing or expired). |
-| `GET /s/{token}` | The human-facing link (what's encoded in the QR). Unauthenticated `302` redirect to `macroflow://share/{token}`, or `404`. Deliberately not a rendered landing page — a plain redirect is all a browser needs to hand off to the app, and it's what keeps the QR scannable by stock camera apps, which only auto-recognize `http(s)://` URLs. |
+| `GET /s/{token}` | The human-facing link (what's encoded in the QR). Unauthenticated `302` redirect to `macroflow://share/{token}?origin=<server>`, or `404`. Deliberately not a rendered landing page — a plain redirect is all a browser needs to hand off to the app, and it's what keeps the QR scannable by stock camera apps, which only auto-recognize `http(s)://` URLs. The `origin` parameter tells the receiving app which server to fetch the payload from. |
 
 Shares expire after `SHARE_TTL_DAYS` (default 30) and are garbage-collected
 opportunistically on the next create. Creating a share is rate-limited per
