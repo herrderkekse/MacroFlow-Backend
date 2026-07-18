@@ -57,6 +57,19 @@ sends CORS headers so the website can call it cross-origin; allowed origins are
 configured via `CORS_ORIGINS`. Stored messages are read and deleted through the
 admin API.
 
+**Share** — hands a food/recipe/log payload from one account to anyone with
+the resulting link, no account required to view/import it:
+
+| Method & path | Purpose |
+|---|---|
+| `POST /api/v1/share` | Create a share (HTTP Basic auth required). Body `{kind: "food"\|"recipe"\|"log", version, payload}`. Returns `201 {token, url}` / `400` (invalid kind/version) / `413` (payload over `SHARE_MAX_BYTES`) / `429` (rate-limited). |
+| `GET /api/v1/share/{token}` | Fetch a share's payload as JSON (unauthenticated). `200 {kind, version, payload, createdAt}` / `404` (missing or expired). |
+| `GET /s/{token}` | The human-facing link (what's encoded in the QR). Unauthenticated `302` redirect to `macroflow://share/{token}?origin=<server>`, or `404`. Deliberately not a rendered landing page — a plain redirect is all a browser needs to hand off to the app, and it's what keeps the QR scannable by stock camera apps, which only auto-recognize `http(s)://` URLs. The `origin` parameter tells the receiving app which server to fetch the payload from. |
+
+Shares expire after `SHARE_TTL_DAYS` (default 30) and are garbage-collected
+opportunistically on the next create. Creating a share is rate-limited per
+account (20/hour); the two read endpoints are rate-limited per IP (60/5min).
+
 Plus an unauthenticated `GET /healthz` for orchestrator probes.
 
 ## Configuration
@@ -75,6 +88,9 @@ All via environment variables (see [.env.example](.env.example)):
 | `MAX_USER_BYTES` | `0` | Per-user stored-size cap in bytes (`0` = unlimited). Over-cap pushes get `507`. |
 | `ADMIN_ADDR` | — (disabled) | Admin dashboard/API listener, e.g. `127.0.0.1:8081` (`:8081` in Docker). **Keep it host-only** — see below. |
 | `CORS_ORIGINS` | `*` | Origins allowed to call the contact endpoint from a browser, comma-separated. Set to the website origin in production, e.g. `https://macro-flow.org`. |
+| `SHARE_MAX_BYTES` | `65536` (64 KiB) | Max share payload size in bytes. |
+| `SHARE_TTL_DAYS` | `30` | Days a share stays retrievable before it's garbage-collected. |
+| `PUBLIC_ORIGIN` | — (derived from the request) | The externally-reachable `scheme://host` used to build share URLs. Set this behind a TLS-terminating reverse proxy, where the request this server sees is plain HTTP. |
 
 The server refuses to start with no users configured.
 
@@ -167,8 +183,8 @@ go test ./...
 ```
 
 The tests cover auth, push/pull round-trips, seq monotonicity, compaction
-(latest-per-row incl. delete tombstones), user isolation, pagination, and
-all-or-nothing batch validation.
+(latest-per-row incl. delete tombstones), user isolation, pagination,
+all-or-nothing batch validation, and share create/fetch/redirect/expiry.
 
 ## How it works
 
