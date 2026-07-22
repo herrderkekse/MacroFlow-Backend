@@ -21,7 +21,10 @@ var shareKinds = map[string]bool{
 	"log":    true,
 }
 
-const currentShareVersion = 1
+// acceptedShareVersions are the payload versions this server stores. v1 is
+// kept so installs on the older app keep sharing; v2 adds optional fields
+// (author, edited recipe-log composition) the store passes through untouched.
+var acceptedShareVersions = map[int]bool{1: true, 2: true}
 
 // Rate-limit window for creating shares, keyed by the authenticated username
 // rather than IP (the endpoint requires auth, so abuse is attributable).
@@ -60,7 +63,7 @@ func (s *Server) createShare(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "unknown share kind")
 		return
 	}
-	if req.Version != currentShareVersion {
+	if !acceptedShareVersions[req.Version] {
 		writeError(w, http.StatusBadRequest, "unsupported payload version")
 		return
 	}

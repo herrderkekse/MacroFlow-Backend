@@ -38,13 +38,24 @@ func TestShareCreateValidation(t *testing.T) {
 	}{
 		{"unknown kind", valid(map[string]any{"kind": "workout"})},
 		{"missing kind", valid(map[string]any{"kind": nil})},
-		{"unsupported version", valid(map[string]any{"version": 2})},
+		{"unsupported version", valid(map[string]any{"version": 99})},
 		{"missing payload", valid(map[string]any{"payload": nil})},
 	}
 	for _, tc := range cases {
 		if rec := do(t, h, "POST", "/api/v1/share", "alice", "secret", tc.body); rec.Code != http.StatusBadRequest {
 			t.Errorf("%s: want 400, got %d (%s)", tc.name, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+func TestShareCreateAcceptsV2(t *testing.T) {
+	h := newTestServer(t)
+	rec := do(t, h, "POST", "/api/v1/share", "alice", "secret", map[string]any{
+		"kind": "log", "version": 2,
+		"payload": map[string]any{"sharedBy": "alice", "items": []any{}},
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("v2 create: want 201, got %d (%s)", rec.Code, rec.Body.String())
 	}
 }
 
